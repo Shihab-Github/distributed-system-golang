@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -50,6 +51,7 @@ func fetchCatalogFromDB() []Video {
 }
 
 func catalogHandler(w http.ResponseWriter, r *http.Request) {
+	log.Printf("Handling request from %s", os.Getenv("PORT"))
 	w.Header().Set("Content-Type", "application/json")
 
 	cached, err := rdb.Get(ctx, "catalog").Result()
@@ -68,6 +70,13 @@ func catalogHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	http.HandleFunc("/catalog", catalogHandler)
-	log.Println("Streamhub server is running on http://localhost:8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	log.Printf("Streamhub server is running on :%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
+
 }
