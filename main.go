@@ -51,7 +51,11 @@ func fetchCatalogFromDB() []Video {
 }
 
 func catalogHandler(w http.ResponseWriter, r *http.Request) {
-	log.Printf("Handling request from %s", os.Getenv("PORT"))
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	log.Printf("Handling request from %s", port)
 	w.Header().Set("Content-Type", "application/json")
 
 	cached, err := rdb.Get(ctx, "catalog").Result()
