@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -18,36 +19,35 @@ type Video struct {
 	Duration int    `json:"duration_minutes"`
 }
 
-var catalog = []Video{
-	{
-		ID:       1,
-		Title:    "Inception",
-		Genre:    "Sci-Fi",
-		Duration: 148,
-	},
-	{
-		ID:       2,
-		Title:    "The Godfather",
-		Genre:    "Crime",
-		Duration: 175,
-	},
-	{
-		ID:       3,
-		Title:    "The Dark Knight",
-		Genre:    "Action",
-		Duration: 152,
-	},
-}
+var port string
 
 var rdb = redis.NewClient(&redis.Options{
 	Addr: "localhost:6379",
 })
 
 var ctx = context.Background()
+var dbPool *pgxpool.Pool
 
-func fetchCatalogFromDB() []Video {
-	time.Sleep(200 * time.Millisecond)
-	return catalog
+func fetchCatalogFromDB() ([]Video, error) {
+	rows, err := dbPool.Query(ctx, "SELECT * FROM videos")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var videos []Video
+
+	for rows.Next() {
+		var v Video
+		err := rows.Scan(&v.ID, &v.Title, &v.Genre, &v.Duration)
+		if err != nil {
+			return nil, err
+		}
+		videos = append(videos, v)
+	}
+
+	return videos, nil
+
 }
 
 func catalogHandler(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,12 @@ func catalogHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := fetchCatalogFromDB()
+	data, err := fetchCatalogFromDB()
+	if err != nil {
+		http.Error(w, "Failed to fetch catalog", http.StatusInternalServerError)
+		log.Printf("DB error: %v", err)
+		return
+	}
 	jsonData, _ := json.Marshal(data)
 
 	rdb.Set(ctx, "catalog", jsonData, 10*time.Second)
@@ -73,6 +78,14 @@ func catalogHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	var err error
+	dbPool, err = pgxpool.New(ctx, "postgres://strteamhub:streamhub@localhost:5432/streamhub")
+	if err != nil {
+		log.Fatalf("Unabnle to connect to database: %v", err)
+	}
+
+	defer dbPool.Close()
+
 	http.HandleFunc("/catalog", catalogHandler)
 
 	port := os.Getenv("PORT")
